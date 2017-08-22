@@ -7,6 +7,7 @@ package textutil
 import (
 	"errors"
 	"testing"
+	"unicode"
 
 	"golang.org/x/text/transform"
 )
@@ -31,16 +32,8 @@ func (rwReplaceAll) Rewrite(s State) {
 	s.WriteRune('a')
 }
 
-type genericRewriter func(State)
-
-func (r genericRewriter) Rewrite(s State) {
-	r(s)
-}
-
-func (r genericRewriter) Reset() {}
-
-func rw(r genericRewriter) transform.SpanningTransformer {
-	return NewTransformer(r)
+func rw(r func(State)) transform.SpanningTransformer {
+	return NewTransformFromFunc(r)
 }
 
 // rwLast writes the success of the last call to Rewrite as the first rune.
@@ -74,7 +67,7 @@ func TestRewriteMain(t *testing.T) {
 		in:      "1",
 		out:     "a",
 		outFull: "a",
-		t:       NewTransformer(rwReplaceAll{}),
+		t:       NewTransform(rwReplaceAll{}),
 		errSpan: transform.ErrEndOfSpan,
 	}, {
 		desc:    "Don't call more than twice.",
@@ -83,7 +76,7 @@ func TestRewriteMain(t *testing.T) {
 		in:      "11",
 		out:     "aa",
 		outFull: "aa",
-		t:       NewTransformer(rwReplaceAll{}),
+		t:       NewTransform(rwReplaceAll{}),
 		errSpan: transform.ErrEndOfSpan,
 	}, {
 		desc:    "Don't call for incomplete UTF-8.",
@@ -93,7 +86,7 @@ func TestRewriteMain(t *testing.T) {
 		out:     "a",
 		outFull: "aa",
 		err:     transform.ErrShortSrc,
-		t:       NewTransformer(rwReplaceAll{}),
+		t:       NewTransform(rwReplaceAll{}),
 		errSpan: transform.ErrEndOfSpan,
 	}, {
 		desc:    "Call for incomplete UTF-8 at end of input.",
@@ -102,7 +95,7 @@ func TestRewriteMain(t *testing.T) {
 		in:      "e\xcc",
 		out:     "e\ufffd",
 		outFull: "e\ufffd",
-		t:       NewTransformer(rwCopy{}),
+		t:       NewTransform(rwCopy{}),
 		errSpan: transform.ErrEndOfSpan,
 		nSpan:   1,
 	}, {
@@ -112,7 +105,7 @@ func TestRewriteMain(t *testing.T) {
 		in:      "e\x80",
 		out:     "e\ufffd",
 		outFull: "e\ufffd",
-		t:       NewTransformer(rwCopy{}),
+		t:       NewTransform(rwCopy{}),
 		errSpan: transform.ErrEndOfSpan,
 		nSpan:   1,
 	}, {
@@ -155,7 +148,7 @@ func TestRewriteMain(t *testing.T) {
 		out:     "a",
 		outFull: "aaa",
 		err:     transform.ErrShortDst,
-		t:       NewTransformer(&rwCopy{}),
+		t:       NewTransform(&rwCopy{}),
 		nSpan:   3,
 	}, {
 		desc:    "Unread.",
@@ -258,6 +251,26 @@ func TestRewriteMain(t *testing.T) {
 		}),
 		errSpan: myError,
 		nSpan:   len("a\u0300"),
+	}, {
+		desc:    "Span",
+		szDst:   large,
+		atEOF:   true,
+		in:      "123123abc",
+		out:     "123123abC",
+		outFull: "123123abC",
+		t: rw(func(s State) {
+			r, _ := s.ReadRune()
+			s.WriteRune(r)
+			r, _ = s.ReadRune()
+			s.WriteRune(r)
+			r, _ = s.ReadRune()
+			if r >= 'a' {
+				r = unicode.ToUpper(r)
+			}
+			s.WriteRune(r)
+		}),
+		errSpan: transform.ErrEndOfSpan,
+		nSpan:   len("123123"),
 	}}
 	for i, tt := range testCases {
 		tt.check(t, i)
@@ -267,7 +280,7 @@ func TestRewriteMain(t *testing.T) {
 func TestRewriteAlloc(t *testing.T) {
 	src := []byte(input)
 	dst := make([]byte, len(src))
-	r := NewTransformer(&rwCopy{})
+	r := NewTransform(&rwCopy{})
 
 	// There should be no allocations.
 	if n := testing.AllocsPerRun(1, func() { r.Transform(dst, src, true) }); n > 0 {
@@ -279,7 +292,7 @@ func BenchmarkRewriteAll(t *testing.B) {
 	dst := make([]byte, 2*len(input))
 	src := []byte(input)
 
-	r := NewTransformer(rwReplaceAll{})
+	r := NewTransform(rwReplaceAll{})
 
 	for i := 0; i < t.N; i++ {
 		r.Transform(dst, src, true)
@@ -290,7 +303,7 @@ func BenchmarkRewriteNone(t *testing.B) {
 	dst := make([]byte, 2*len(input))
 	src := []byte(input)
 
-	r := NewTransformer(rwCopy{})
+	r := NewTransform(rwCopy{})
 
 	for i := 0; i < t.N; i++ {
 		r.Transform(dst, src, true)

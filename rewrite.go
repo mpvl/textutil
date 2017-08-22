@@ -10,32 +10,38 @@ import (
 	"golang.org/x/text/transform"
 )
 
-// A RewriterFunc wraps a function to implement a stateless Rewriter.
-type RewriterFunc func(s State)
+// A rewriterFunc wraps a function to implement a stateless Rewriter.
+type rewriterFunc func(s State)
 
-func (r RewriterFunc) Rewrite(s State) { r(s) }
-func (r RewriterFunc) Reset()          {}
+func (r rewriterFunc) Rewrite(s State) { r(s) }
+func (r rewriterFunc) Reset()          {}
 
-// A Rewriter rewrites the next segment of input text. The Transformer created
-// by NewTransformer will repeatedly call the Rewrite method of this Rewriter
-// until it cannot make further progress or if an error is encountered.
+// A Rewriter rewrites UTF-8 bytes.
 type Rewriter interface {
 	// Rewrite rewrites an indivisible segment of input. If any error is
 	// encountered, all reads and writes made within the same call to Rewrite
-	// will be discarded.
+	// will be discarded. Otherwise, the runes read from the input replace the
+	// runes written in the output.
 	//
-	// It will not be called with empty input.
+	// Rewrite must be called with a State representing non-empty input.
 	Rewrite(c State)
 
 	// Reset implements the Reset method of tranform.Transformer.
 	Reset()
 }
 
-// NewTransformer returns a Transformer that uses the given Rewriter to
-// transform input. The Reset method of the returned Transformer will call the
-// Reset method of the Rewriter if it defines one.
-func NewTransformer(r Rewriter) Transformer {
+// NewTransform returns a Transformer that uses the given Rewriter to
+// transform input by repeatedly calling Rewrite until all input has been
+// processed or an error is encountered.
+func NewTransform(r Rewriter) Transformer {
 	return Transformer{&rewriter{rewrite: r}}
+}
+
+// NewTransformFromFunc calls NewTransform with a stateless Rewriter created
+// from rewrite, which must follow the same guidelines as the Rewrite method of
+// a Rewriter.
+func NewTransformFromFunc(rewrite func(State)) Transformer {
+	return Transformer{&rewriter{rewrite: rewriterFunc(rewrite)}}
 }
 
 // rewriter implements the Transformer interface as defined in
@@ -84,7 +90,8 @@ func (t *rewriter) Span(src []byte, atEOF bool) (nSrc int, err error) {
 	return nSrc, nil
 }
 
-// State track the progress of a Transformer created from a Rewriter.
+// State tracks the transformation of a minimal chunk of input. Reads and writes
+// on a State will either be committed in full or not at all.
 type State interface {
 	// ReadRune returns the next rune from the source and the number of bytes
 	// consumed. It returns (RuneError, 1) for Invalid UTF-8 bytes. If the
@@ -126,13 +133,6 @@ type spanState struct {
 	readPastEnd bool // Used for UnreadRune.
 }
 
-// SetError sets the error to be returned by Transform. The first error set will
-// be returned. An error may also be set by one of State's methods.
-//
-// A Rewriter should not set ErrShortSrc or ErrShortDst itself. Use the Bytes
-// and String functions defined in go.text/transform, instead of the
-// corresponding methods of the Transformer returned by Rewrite, to detect
-// special errors set by a Rewriter.
 func (s *spanState) SetError(err error) {
 	if s.err == nil {
 		s.err = err
@@ -165,8 +165,6 @@ func (s *spanState) UnreadRune() {
 	return
 }
 
-// Write implements io.Writer. It sets and returns ErrEndOfSpan if they written
-// output is not equal to the input.
 func (s *spanState) Write(b []byte) (n int, err error) {
 	if max := len(s.src) - s.pDst; len(b) > max {
 		b = b[:max]
@@ -174,7 +172,6 @@ func (s *spanState) Write(b []byte) (n int, err error) {
 	for i, c := range s.src[s.pDst : s.pDst+len(b)] {
 		if b[i] != c {
 			if s.err == nil {
-				s.pDst += i
 				s.err = transform.ErrEndOfSpan
 				return i, s.err
 			}
@@ -184,27 +181,11 @@ func (s *spanState) Write(b []byte) (n int, err error) {
 	return len(b), nil
 }
 
-// Write implements io.Writer. It sets and returns ErrEndOfSpan if they written
-// output is not equal to the input.
 func (s *spanState) WriteBytes(b []byte) bool {
-	if max := len(s.src) - s.pDst; len(b) > max {
-		b = b[:max]
-	}
-	for i, c := range s.src[s.pDst : s.pDst+len(b)] {
-		if b[i] != c {
-			if s.err == nil {
-				s.pDst += i
-				s.err = transform.ErrEndOfSpan
-				return true
-			}
-		}
-	}
-	s.pDst += len(b)
-	return false
+	_, err := s.Write(b)
+	return err == nil
 }
 
-// WriteString writes the given string to the destination and returns whether
-// the write was successful. It sets ErrShortDst if the write was unsuccessful.
 func (s *spanState) WriteString(str string) bool {
 	if max := len(s.src) - s.pDst; len(str) > max {
 		str = str[:max]
@@ -212,7 +193,6 @@ func (s *spanState) WriteString(str string) bool {
 	for i, c := range s.src[s.pDst : s.pDst+len(str)] {
 		if str[i] != c {
 			if s.err == nil {
-				s.pDst += i
 				s.err = transform.ErrEndOfSpan
 				return true
 			}
@@ -222,14 +202,12 @@ func (s *spanState) WriteString(str string) bool {
 	return false
 }
 
-// WriteRune writes the given rune to the destination and whether the write was
-// successful. It sets ErrShortDst if the write was unsuccessful.
 func (s *spanState) WriteRune(r rune) bool {
 	// TODO: ASCII fast path and other optimizations.
 	var b [utf8.UTFMax]byte
 	sz := utf8.EncodeRune(b[:], r)
-	n, _ := s.Write(b[:sz])
-	return n == sz
+	_, err := s.Write(b[:sz])
+	return err == nil
 }
 
 // A state is passed to a Rewriter for reading from and writing to the source
@@ -237,12 +215,6 @@ func (s *spanState) WriteRune(r rune) bool {
 type state struct {
 	spanState
 	dst []byte
-}
-
-func (s *state) SetError(err error) {
-	if s.err == nil {
-		s.err = err
-	}
 }
 
 func (s *state) Write(b []byte) (n int, err error) {

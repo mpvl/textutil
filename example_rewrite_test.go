@@ -10,25 +10,24 @@ import (
 	"unicode/utf8"
 
 	"github.com/mpvl/textutil"
-
 	"golang.org/x/text/transform"
 )
 
 func ExampleRewriter() {
-	clean := textutil.NewTransformer(&cleanSpaces{})
-	fmt.Println(clean.String("  Hello   world! \t Hello   world!   "))
+	clean := textutil.NewTransform(&cleanSpaces{})
+	fmt.Println(clean.String("  Hello   world! \t Hello   world!   ")) // Hello world! Hello world!
 
-	escape := textutil.NewTransformer(escaper{})
-	escaped := escape.String("Héllø wørl∂!")
+	escape := textutil.NewTransformFromFunc(escape)
+	escaped := escape.String("Héllø wørl∂!") // H\u00E9ll\u00F8 w\u00F8rl\u2202!
 	fmt.Println(escaped)
 
-	unescape := textutil.NewTransformer(&unescaper{})
-	fmt.Println(unescape.String(escaped))
+	unescape := textutil.NewTransformFromFunc(unescape)
+	fmt.Println(unescape.String(escaped)) // Héllø wørl∂!
 
 	// As usual, Transformers can be chained together:
 	t := transform.Chain(escape, clean, unescape)
 	s, _, _ := transform.String(t, "\t\t\tHéllø   \t   wørl∂!    ")
-	fmt.Println(s)
+	fmt.Println(s) // Héllø wørl∂!
 
 	// Output:
 	// Hello world! Hello world!
@@ -58,13 +57,9 @@ func (t *cleanSpaces) Rewrite(s textutil.State) {
 
 func (t *cleanSpaces) Reset() { *t = cleanSpaces{} }
 
-// escaper rewrites input by escaping all non-ASCII runes and the escape
+// escape rewrites input by escaping all non-ASCII runes and the escape
 // character itself.
-type escaper struct{}
-
-func (escaper) Reset() {}
-
-func (escaper) Rewrite(s textutil.State) {
+func escape(s textutil.State) {
 	switch r, _ := s.ReadRune(); {
 	case r >= 0xffff:
 		fmt.Fprintf(s, `\U%08X`, r)
@@ -77,15 +72,8 @@ func (escaper) Rewrite(s textutil.State) {
 	}
 }
 
-// unescaper unescapes input escaped by escaper.
-type unescaper struct{}
-
-func (t *unescaper) Reset() {}
-
-// Rewrite unescapes the next encoded rune in the input. Note that if a ReadRune
-// causes an ErrShortSrc to be set, any subsequent calls to the State will be
-// ignored.
-func (t *unescaper) Rewrite(s textutil.State) {
+// unescape unescapes input escaped by escaper.
+func unescape(s textutil.State) {
 	if r, _ := s.ReadRune(); r != '\\' {
 		s.WriteRune(r)
 		return
