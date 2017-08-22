@@ -33,7 +33,7 @@ func (rwReplaceAll) Rewrite(s State) {
 }
 
 func rw(r func(State)) transform.SpanningTransformer {
-	return NewTransformFromFunc(r)
+	return NewTransformerFromFunc(r)
 }
 
 // rwLast writes the success of the last call to Rewrite as the first rune.
@@ -67,7 +67,7 @@ func TestRewriteMain(t *testing.T) {
 		in:      "1",
 		out:     "a",
 		outFull: "a",
-		t:       NewTransform(rwReplaceAll{}),
+		t:       NewTransformer(rwReplaceAll{}),
 		errSpan: transform.ErrEndOfSpan,
 	}, {
 		desc:    "Don't call more than twice.",
@@ -76,7 +76,7 @@ func TestRewriteMain(t *testing.T) {
 		in:      "11",
 		out:     "aa",
 		outFull: "aa",
-		t:       NewTransform(rwReplaceAll{}),
+		t:       NewTransformer(rwReplaceAll{}),
 		errSpan: transform.ErrEndOfSpan,
 	}, {
 		desc:    "Don't call for incomplete UTF-8.",
@@ -86,7 +86,7 @@ func TestRewriteMain(t *testing.T) {
 		out:     "a",
 		outFull: "aa",
 		err:     transform.ErrShortSrc,
-		t:       NewTransform(rwReplaceAll{}),
+		t:       NewTransformer(rwReplaceAll{}),
 		errSpan: transform.ErrEndOfSpan,
 	}, {
 		desc:    "Call for incomplete UTF-8 at end of input.",
@@ -95,7 +95,7 @@ func TestRewriteMain(t *testing.T) {
 		in:      "e\xcc",
 		out:     "e\ufffd",
 		outFull: "e\ufffd",
-		t:       NewTransform(rwCopy{}),
+		t:       NewTransformer(rwCopy{}),
 		errSpan: transform.ErrEndOfSpan,
 		nSpan:   1,
 	}, {
@@ -105,7 +105,7 @@ func TestRewriteMain(t *testing.T) {
 		in:      "e\x80",
 		out:     "e\ufffd",
 		outFull: "e\ufffd",
-		t:       NewTransform(rwCopy{}),
+		t:       NewTransformer(rwCopy{}),
 		errSpan: transform.ErrEndOfSpan,
 		nSpan:   1,
 	}, {
@@ -148,7 +148,7 @@ func TestRewriteMain(t *testing.T) {
 		out:     "a",
 		outFull: "aaa",
 		err:     transform.ErrShortDst,
-		t:       NewTransform(&rwCopy{}),
+		t:       NewTransformer(&rwCopy{}),
 		nSpan:   3,
 	}, {
 		desc:    "Unread.",
@@ -280,7 +280,7 @@ func TestRewriteMain(t *testing.T) {
 func TestRewriteAlloc(t *testing.T) {
 	src := []byte(input)
 	dst := make([]byte, len(src))
-	r := NewTransform(&rwCopy{})
+	r := NewTransformer(&rwCopy{})
 
 	// There should be no allocations.
 	if n := testing.AllocsPerRun(1, func() { r.Transform(dst, src, true) }); n > 0 {
@@ -292,7 +292,7 @@ func BenchmarkRewriteAll(t *testing.B) {
 	dst := make([]byte, 2*len(input))
 	src := []byte(input)
 
-	r := NewTransform(rwReplaceAll{})
+	r := NewTransformer(rwReplaceAll{})
 
 	for i := 0; i < t.N; i++ {
 		r.Transform(dst, src, true)
@@ -303,7 +303,7 @@ func BenchmarkRewriteNone(t *testing.B) {
 	dst := make([]byte, 2*len(input))
 	src := []byte(input)
 
-	r := NewTransform(rwCopy{})
+	r := NewTransformer(rwCopy{})
 
 	for i := 0; i < t.N; i++ {
 		r.Transform(dst, src, true)

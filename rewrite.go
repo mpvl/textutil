@@ -30,17 +30,17 @@ type Rewriter interface {
 	Reset()
 }
 
-// NewTransform returns a Transformer that uses the given Rewriter to
+// NewTransformer returns a Transformer that uses the given Rewriter to
 // transform input by repeatedly calling Rewrite until all input has been
 // processed or an error is encountered.
-func NewTransform(r Rewriter) Transformer {
+func NewTransformer(r Rewriter) Transformer {
 	return Transformer{&rewriter{rewrite: r}}
 }
 
-// NewTransformFromFunc calls NewTransform with a stateless Rewriter created
+// NewTransformerFromFunc calls NewTransform with a stateless Rewriter created
 // from rewrite, which must follow the same guidelines as the Rewrite method of
 // a Rewriter.
-func NewTransformFromFunc(rewrite func(State)) Transformer {
+func NewTransformerFromFunc(rewrite func(State)) Transformer {
 	return Transformer{&rewriter{rewrite: rewriterFunc(rewrite)}}
 }
 
