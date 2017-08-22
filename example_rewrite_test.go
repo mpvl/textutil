@@ -95,8 +95,6 @@ func unescape(s textutil.State) {
 			default:
 				s.UnreadRune()
 				s.WriteRune(utf8.RuneError)
-				// Alternatively, one may call s.SetError(ErrSyntax), allowing
-				// the Transform to fail.
 				return
 			}
 		}
@@ -105,7 +103,5 @@ func unescape(s textutil.State) {
 		s.WriteRune('\\')
 	default:
 		s.WriteRune(utf8.RuneError)
-		// Alternatively, one may call c.SetError(ErrSyntax), allowing the
-		// Transform to fail.
 	}
 }
