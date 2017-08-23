@@ -17,11 +17,11 @@ func ExampleRewriter() {
 	clean := textutil.NewTransformer(&cleanSpaces{})
 	fmt.Println(clean.String("  Hello   world! \t Hello   world!   ")) // Hello world! Hello world!
 
-	escape := textutil.NewTransformerFromFunc(escape)
+	escape := textutil.NewTransformer(textutil.RewriterFunc(escape))
 	escaped := escape.String("Héllø wørl∂!") // H\u00E9ll\u00F8 w\u00F8rl\u2202!
 	fmt.Println(escaped)
 
-	unescape := textutil.NewTransformerFromFunc(unescape)
+	unescape := textutil.NewTransformer(textutil.RewriterFunc(unescape))
 	fmt.Println(unescape.String(escaped)) // Héllø wørl∂!
 
 	// As usual, Transformers can be chained together:
