@@ -10,12 +10,6 @@ import (
 	"golang.org/x/text/transform"
 )
 
-// A rewriterFunc wraps a function to implement a stateless Rewriter.
-type rewriterFunc func(s State)
-
-func (r rewriterFunc) Rewrite(s State) { r(s) }
-func (r rewriterFunc) Reset()          {}
-
 // A Rewriter rewrites UTF-8 bytes.
 type Rewriter interface {
 	// Rewrite rewrites an indivisible segment of input. If any error is
@@ -37,12 +31,18 @@ func NewTransformer(r Rewriter) Transformer {
 	return Transformer{&rewriter{rewrite: r}}
 }
 
-// NewTransformerFromFunc calls NewTransform with a stateless Rewriter created
-// from rewrite, which must follow the same guidelines as the Rewrite method of
-// a Rewriter.
-func NewTransformerFromFunc(rewrite func(State)) Transformer {
-	return Transformer{&rewriter{rewrite: rewriterFunc(rewrite)}}
+// RewriterFunc is an adapter type that allows using an ordinary function as a
+// stateless Rewriter. If f is a function with the correct signature,
+// RewriterFunc(f) is a Rewriter that calls f.
+type RewriterFunc func(State)
+
+// Rewrite calls f and satisfies the Rewriter interface for RewriterFunc.
+func (f RewriterFunc) Rewrite(c State) {
+	f(c)
 }
+
+// Reset is a noop.
+func (RewriterFunc) Reset() {}
 
 // rewriter implements the Transformer interface as defined in
 // go.text/transform.

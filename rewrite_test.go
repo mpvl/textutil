@@ -32,8 +32,8 @@ func (rwReplaceAll) Rewrite(s State) {
 	s.WriteRune('a')
 }
 
-func rw(r func(State)) transform.SpanningTransformer {
-	return NewTransformerFromFunc(r)
+func rw(r RewriterFunc) transform.SpanningTransformer {
+	return NewTransformer(r)
 }
 
 // rwLast writes the success of the last call to Rewrite as the first rune.
